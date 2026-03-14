@@ -1,44 +1,55 @@
 # lex-volition
 
-Intention formation and drive synthesis for the LegionIO brain-modeled cognitive architecture.
+Drive synthesis and intention formation for LegionIO cognitive agents. Computes five motivational drives from the cognitive tick cycle and produces a prioritized intention stack.
 
 ## What It Does
 
-Gives the agent will. Synthesizes five cognitive drives (curiosity, corrective, urgency, epistemic, social) from other extensions into a ranked intention stack. The agent knows what it wants to do and why.
+`lex-volition` is the `action_selection` phase of the cognitive cycle. Each tick, it reads the full output of preceding phases and synthesizes five motivational drives. Drives above the threshold generate intentions, which are pushed onto a salience-sorted stack (max 7, per Miller's Law). Intentions decay each tick and expire by age.
+
+- **Drives**: curiosity, corrective, urgency, epistemic, social
+- **Drive weights**: curiosity 0.25, corrective 0.20, urgency 0.20, epistemic 0.20, social 0.15
+- **Urgency source**: gut signal from lex-emotion (`:alarm`=1.0, `:heightened`=0.7, `:explore`=0.5, `:attend`=0.4, `:calm`=0.1)
+- **Intention decay**: -0.05 salience per tick; expire at floor (0.1) or max age (100 ticks)
+- **Stack capacity**: 7 intentions max; lowest salience evicted on overflow
+
+## Usage
 
 ```ruby
+require 'legion/extensions/volition'
+
 client = Legion::Extensions::Volition::Client.new
 
-# Form intentions from cognitive state
+# Form intentions from tick results (called each cognitive cycle)
 result = client.form_intentions(
   tick_results: {
-    emotional_evaluation: { valence: 0.3, arousal: 0.8 },
-    gut_instinct:         { signal: :heightened },
-    prediction_engine:    { confidence: 0.3 }
-  },
-  cognitive_state: {
-    curiosity:  { intensity: 0.7, active_count: 4, top_question: 'Why are traces sparse?' },
-    reflection: { health: 0.6, pending_adaptations: 2 }
+    gut_instinct: { signal: :heightened },
+    prediction_engine: { calibration_error: 0.4, uncertainty: 0.6 },
+    conflict_resolution: { severity: 0.3 }
   }
 )
-# => { drives: { curiosity: 0.59, corrective: 0.51, urgency: 0.55, ... },
-#      dominant_drive: :curiosity,
-#      current_intention: { goal: "Why are traces sparse?", drive: :curiosity, ... } }
+# => { intentions_formed: 3, dominant_drive: :epistemic, stack_size: 3 }
 
-# Check current will
+# Check current top intention
 client.current_intention
-# => { has_will: true, goal: "Why are traces sparse?", drive: :curiosity }
+# => { intention: { drive: :epistemic, domain: :prediction, goal: '...', salience: 0.8, state: :pending } }
+
+# Reinforce an intention (keep it salient)
+client.reinforce_intention(intention_id: 'int_1', amount: 0.2)
+
+# Complete an intention
+client.complete_intention(intention_id: 'int_1')
+
+# Suspend/resume
+client.suspend_intention(intention_id: 'int_2')
+client.resume_intention(intention_id: 'int_2')
+
+# Current volition state
+client.volition_status
+# => { intentions: [{ drive:, goal:, salience:, state:, age_ticks: }, ...] }
+
+# Recent history
+client.intention_history(limit: 20)
 ```
-
-## Drive Sources
-
-| Drive | Source | What It Means |
-|-------|--------|---------------|
-| `:curiosity` | lex-curiosity wonder intensity + count | Knowledge seeking |
-| `:corrective` | lex-reflection health gap + pending adaptations | Self-improvement |
-| `:urgency` | lex-emotion arousal + gut signal | Urgent response |
-| `:epistemic` | lex-prediction confidence gap + pending count | Uncertainty reduction |
-| `:social` | lex-trust composite + lex-mesh peer count | Collaborative engagement |
 
 ## Development
 
